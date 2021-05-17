@@ -466,7 +466,7 @@ jobs:
     needs: E-stage1
     strategy:
       matrix:
-        os: [ ubuntu-18.04, ubuntu-20.04, macos-10.15, macos-11.0, windows-2016, windows-2019 ]
+        os: [ ubuntu-18.04, ubuntu-20.04, macos-latest, windows-2016, windows-2019 ]
 
     runs-on: ${{ matrix.os }}
     steps:
