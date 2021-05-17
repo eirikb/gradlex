@@ -1,0 +1,521 @@
+on: [ push, pull_request ]
+
+# Plan (tiers):
+# A: Prerequisites
+# B: Bundle JDK and Gradle (for each target)
+# C: Build stage 2 (for each target)
+# D: Build gg (for each target)
+# E: Build stage 1
+# F: Test (for each target)
+# G: Create release
+
+name: Gradlex!
+jobs:
+
+  A-gradle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v2
+        id: cache
+        with:
+          path: gradle-7.0
+          key: agcache1
+
+      - name: Download and unzip Gradle
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          wget https://services.gradle.org/distributions/gradle-7.0-bin.zip
+          unzip gradle-7.0-bin.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: gradle
+          path: gradle-7.0
+
+
+  A-makeself:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v2
+        id: makeself
+        with:
+          path: makeself
+          key: makeself
+
+      - name: Install makeself
+        if: steps.cache.outputs.cache-hit != 'true' && steps.makeselfcache.outputs.cache-hit != 'true'
+        run: |
+          wget https://github.com/megastep/makeself/releases/download/release-2.4.3/makeself-2.4.3.run
+          sh makeself-2.4.3.run
+          mv makeself-2.4.3 makeself
+
+
+  A-image-alpine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2.1.0
+        if: steps.my-alpine.outputs.cache-hit != 'true'
+
+      - uses: actions/cache@v2
+        id: my-alpine
+        with:
+          path: my-alpine.img
+          key: my-alpine4
+
+      - name: Build my-alpine
+        if: steps.my-alpine.outputs.cache-hit != 'true'
+        run: |
+          docker build my-alpine -t my-alpine
+          docker save -o my-alpine.img my-alpine
+
+
+  B-gradlebundle-alpine:
+    needs: [ A-gradle, A-image-alpine, A-makeself ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - uses: actions/cache@v2
+        id: cache
+        with:
+          path: gradle
+          key: bgacache7
+
+      - name: Download gradle
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v2
+        with:
+          name: gradle
+          path: gradle-7.0
+
+      - uses: actions/cache@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: my-alpine.img
+          key: my-alpine4
+
+      - run: docker load -i my-alpine.img
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - name: Build!
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm -u $(id -u) -v $(pwd):/b my-alpine /o/jdk/bin/jpackage --name gradle -i gradle-7.0/lib --type app-image --main-jar gradle-launcher-7.0.jar
+
+      - name: Test build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: docker run --rm -u $(id -u) -v $(pwd):/b my-alpine ./gradle/bin/gradle --version
+
+      - name: Upload gradle bundle artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: gradlebundle_alpine
+          path: gradle
+
+
+  B-gradlebundle-os:
+    needs: A-gradle
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/cache@v2
+        id: cache
+        with:
+          path: gradle
+          key: bgocache12-${{ matrix.os }}
+
+      - uses: actions/checkout@v2.1.0
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - name: Download gradle
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v2
+        with:
+          name: gradle
+          path: gradle-7.0
+
+      - uses: actions/setup-java@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          distribution: 'adopt'
+          java-version: '14'
+
+      - name: Build!
+        if: |
+          steps.cache.outputs.cache-hit != 'true' &&
+          ( matrix.os != 'windows-latest')
+        run: jpackage --name gradle -i gradle-7.0/lib --type app-image --main-jar gradle-launcher-7.0.jar
+
+      - name: Build!
+        if: |
+          steps.cache.outputs.cache-hit != 'true' &&
+          ( matrix.os  == 'windows-latest')
+        run: jpackage --name gradle -i gradle-7.0\lib --type app-image --main-jar gradle-launcher-7.0.jar
+
+      - run: |
+          mv gradle.app gradle
+          mkdir gradle/bin
+          echo 'chmod +x ./.gradle/Contents/MacOS/gradle' > gradle/bin/gradle
+          echo './.gradle/Contents/MacOS/gradle $1' >> gradle/bin/gradle
+        if: |
+          steps.cache.outputs.cache-hit != 'true' &&
+          ( matrix.os == 'macos-latest' )
+        shell: bash
+
+      - name: Upload gradle bundle artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: gradlebundle_${{ matrix.os }}
+          path: gradle
+
+
+  # This part is for ARM. Wish it would work, but Gradle won't build! gradlex works though, FWIW
+  #  B-gradlebundle-run-on-arch:
+  #    needs: [ A-gradle, A-makeself ]
+  #    runs-on: ubuntu-18.04
+  #
+  #    strategy:
+  #      matrix:
+  #        include:
+  #          - arch: aarch64
+  #            distro: ubuntu18.04
+  #    #          - arch: ppc64le
+  #    #            distro: alpine_latest
+  #    #          - arch: s390x
+  #    #            distro: fedora_latest
+  #
+  #
+  #
+  #    steps:
+  #      - uses: actions/checkout@v2.1.0
+  #
+  #      - name: Download gradle
+  #        uses: actions/download-artifact@v2
+  #        with:
+  #          name: gradle
+  #          path: gradle-7.0
+  #
+  #      - uses: uraimo/run-on-arch-action@v2.0.5
+  #        name: Build artifact
+  #        id: build2
+  #        with:
+  #          arch: ${{ matrix.arch }}
+  #          distro: ${{ matrix.distro }}
+  #
+  #          githubToken: ${{ github.token }}
+  #
+  #          setup: |
+  #            mkdir -p "${PWD}/artifacts"
+  #
+  #          dockerRunArgs: |
+  #            --volume "${PWD}/artifacts:/artifacts"
+  #            --volume "${PWD}:/wat"
+  #
+  #          env: |
+  #            artifact_name: git-${{ matrix.distro }}_${{ matrix.arch }}
+  #
+  #          shell: /bin/sh
+  #
+  #          install: |
+  #            case "${{ matrix.distro }}" in
+  #              ubuntu*|jessie|stretch|buster)
+  #
+  #                apt-get update -q -y
+  #                apt-get install -q -y git build-essential cmake wget binutils binutils-common
+  #                wget https://github.com/AdoptOpenJDK/openjdk16-binaries/releases/download/jdk-16.0.1%2B9/OpenJDK16U-jdk_aarch64_linux_hotspot_16.0.1_9.tar.gz
+  #                tar xzf OpenJDK16U-jdk_aarch64_linux_hotspot_16.0.1_9.tar.gz
+  #                mkdir /o
+  #                mv jdk-16.0.1+9 /o/jdk
+  #                echo OK
+  #                which objcopy
+  #                ;;
+  #              fedora*)
+  #                dnf -y update
+  #                dnf -y install git which
+  #                ;;
+  #              alpine*)
+  #                apk update
+  #                apk add git
+  #                ;;
+  #            esac
+  #
+  #          run: |
+  #            echo YES
+  #            which objcopy
+  #            cd /wat
+  #            /o/jdk/bin/jpackage --name gradle -i gradle-7.0/lib --type app-image --main-jar gradle-launcher-7.0.jar
+  #
+  #      - name: Show the artifact
+  #        run: |
+  #          ls -al "${PWD}/gradle"
+
+
+  C-stage2:
+    #    needs: [ B-gradlebundle-alpine, B-gradlebundle-os ]
+    needs: [ B-gradlebundle-os ]
+    strategy:
+      matrix:
+        target: [ alpine, ubuntu-latest, macos-latest, windows-latest ]
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v2
+        id: cache
+        with:
+          path: hash
+          key: cscache7_${{ matrix.target }}
+
+      - uses: actions/checkout@v2.1.0
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - name: Download gradlebundle
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v2
+        with:
+          name: gradlebundle_${{ matrix.target }}
+          path: gradle
+
+      - uses: actions/cache@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: makeself
+          key: makeself
+
+      - name: Build with makeself
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          ls -lah
+          mkdir yes
+          cp stage2.sh yes
+          mv gradle* yes/gradle
+          ./makeself/makeself.sh yes gradlex2 gradlex2 sh stage2.sh
+
+      - name: Hash!
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          gcc -o print_hash print_hash.c
+          ./print_hash gradlex2 > hash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: hash_${{ matrix.target }}
+          path: hash
+
+      - name: Rename to hash
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          hash=$(cat hash)
+          mkdir out
+          mv gradlex2 "out/$hash"
+
+      - uses: LanceMcCarthy/Action-AzureBlobUpload@v1.9.0
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          connection_string: ${{ secrets.ConnectionString }}
+          container_name: poc
+          source_folder: out
+
+
+  D-gg-alpine:
+    needs: C-stage2
+    runs-on: ubuntu-latest
+
+    env:
+      artifact_name: gg_alpine_x86
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Download stage 2
+        uses: actions/download-artifact@v2
+        with:
+          name: hash_alpine
+          path: hash
+
+      - name: Hash
+        shell: bash
+        run: |
+          hash=$(cat hash/hash)
+          echo "const char *hash = \"$hash\";" > const.h
+
+      - uses: actions/cache@v2
+        with:
+          path: my-alpine.img
+          key: my-alpine4
+
+      - run: docker load -i my-alpine.img
+
+      - name: Build!
+        run: docker run --rm -u $(id -u) -v $(pwd):/b my-alpine sh build-stage1.sh
+
+      - name: Rename
+        run: mv build/gg ./${{ env.artifact_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.artifact_name }}
+          path: ${{ env.artifact_name }}
+
+
+  D-gg-os:
+    needs: C-stage2
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      artifact_name: gg_${{ matrix.os }}_x86
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Download gg
+        uses: actions/download-artifact@v2
+        with:
+          name: hash_${{ matrix.os }}
+          path: hash
+
+      - name: Hash
+        # ENV -> CMAKE -> Code very hard. This very easy
+        shell: bash
+        run: |
+          hash=$(cat hash/hash)
+          echo "const char *hash = \"$hash\";" > const.h
+
+      - name: Configure CMake
+        run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+      - name: Rename
+        shell: bash
+        run: |
+          if [[ -f "build/gg" ]]; then
+            mv build/gg ./${{ env.artifact_name }}
+          else
+            mv build/Debug/gg.exe ./${{ env.artifact_name }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.artifact_name }}
+          path: ${{ env.artifact_name }}
+
+
+  E-stage1:
+    needs: [ D-gg-alpine, D-gg-os ]
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Source
+        uses: actions/checkout@v2.1.0
+
+      - name: Download gg
+        uses: actions/download-artifact@v2
+
+      - uses: actions/cache@v2
+        with:
+          path: makeself
+          key: makeself
+
+      - name: Build with makeself
+        run: |
+          mkdir yes
+          for dir in gg*; do
+            for file in "$dir"/*; do
+              cp "$file" yes
+            done
+          done
+          cp stage1.sh yes
+          ./makeself/makeself.sh yes gradlex gradlex sh stage1.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: gradlex
+          path: gradlex
+
+
+  F-test-docker:
+    needs: E-stage1
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        container: [ alpine, debian, fedora ]
+    container: ${{ matrix.container }}
+    steps:
+      - name: Download gradlex
+        uses: actions/download-artifact@v2
+        with:
+          name: gradlex
+
+      - name: Run!
+        run: sh gradlex -- --version
+
+
+  F-test-os:
+    needs: E-stage1
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Download gradlex
+        uses: actions/download-artifact@v2
+        with:
+          name: gradlex
+
+      - name: Run!
+        run: |
+          sh gradlex -- --version
+          file .gradle/bin/gradle
+
+
+  E-release:
+    name: Release!
+    needs: [ F-test-os, F-test-docker ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate build number
+        id: buildnumber
+        uses: einaregilsson/build-number@v3
+        with:
+          token: ${{ github.token }}
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tag_name: ${{ steps.buildnumber.outputs.build_number }}
+          release_name: Release ${{ steps.buildnumber.outputs.build_number }}
+          draft: false
+          prerelease: false
+
+      - name: Download gradlex
+        uses: actions/download-artifact@v2
+        with:
+          name: gradlex
+
+      - name: Upload Release Asset
+        id: upload-release-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token}}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./gradlex
+          asset_name: gradlex
+          asset_content_type: text/x-shellscript

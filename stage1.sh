@@ -11,5 +11,5 @@ for gg in gg*
 do
   echo "Running $gg..."
   chmod +x "$gg"
-  "./$gg" 2> /dev/null && mv gradlex2* gradlex2 && sh gradlex2 -- "$USER_PWD" $1 && echo "Yeah!" && exit
+  "./$gg" 2> /dev/null && sh gradlex2 -- "$USER_PWD" $1 && exit
 done

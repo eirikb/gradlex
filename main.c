@@ -1,4 +1,5 @@
-#include "./sum.h"
+#include "const.h"
+#include "hash.c"
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -16,13 +17,10 @@ int main() {
     const long bufferSize = 65536;
     const char *host = "gradlex.blob.core.windows.net";
 
-    char filename[100];
-    snprintf(filename, 100, "gradlex2-%llu", sum);
+    char path[1000];
+    snprintf(path, 1000, "/poc/%s", hash);
 
-    char path[100];
-    snprintf(path, 100, "/poc/%s", filename);
-
-    printf("Filename %s. Checksum %llu\n", filename, sum);
+    printf("Download path: %s\n", path);
     printf("Connecting...\n");
 
     struct sockaddr_in serv_addr;
@@ -39,7 +37,7 @@ int main() {
         return -1;
     }
 
-    FILE *f = fopen(filename, "w");
+    FILE *f = fopen("gradlex2", "w");
     if (f == NULL) {
         printf("Error opening file!\n");
         exit(1);
@@ -56,6 +54,7 @@ int main() {
     long totalSize = 0;
     int p = 0;
     printf("Downloading file...\n");
+
     do {
         res = read(sock, buffer, bufferSize);
         if (dataSize == 0) {
@@ -66,6 +65,7 @@ int main() {
             messageSize = end - buffer + dataSize + 4;
             totalSize = messageSize;
             fwrite(end + 4, 1, res - (messageSize - dataSize), f);
+            printf("0%%");
         } else {
             fwrite(buffer, 1, res, f);
         }
@@ -73,27 +73,25 @@ int main() {
         int np = 100 - (int) ((double) messageSize / (double) totalSize * 100);
         if (np != p) {
             p = np;
-            printf("%d%%\n", p);
+            if (p % 10 == 0) {
+                printf("%d%%", p);
+            } else {
+                printf(".");
+            }
+            fflush(stdout);
         }
     } while (messageSize > 0);
-
     fclose(f);
 
-    printf("File downloaded, checking checksum...\n");
-
-    // Only POC!
-    // Required because of http (no https support)
-    FILE *fp = fopen(filename, "rb");
-    unsigned long long checksum = 0;
-    while (!feof(fp) && !ferror(fp)) {
-        checksum += fgetc(fp);
-    }
-    fclose(fp);
-
-    if (checksum != sum) {
-        printf("Checksum failed :( : %ld\n", checksum);
+    printf("\nFile downloaded, checking hash...\n");
+    char newHash[HASH_SIZE];
+    hashForFile("gradlex2", newHash);
+    printf("Hash: %s\n", newHash);
+    if (strcmp(hash, newHash) != 0) {
+        printf("Hash did not match :(\n");
         return 1;
     }
+
 
     printf("Done!\n");
     return 0;
