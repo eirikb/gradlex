@@ -256,8 +256,7 @@ jobs:
 
 
   C-stage2:
-    #    needs: [ B-gradlebundle-alpine, B-gradlebundle-os ]
-    needs: [ B-gradlebundle-os ]
+    needs: [ B-gradlebundle-alpine, B-gradlebundle-os ]
     strategy:
       matrix:
         target: [ alpine, ubuntu-latest, macos-latest, windows-latest ]
