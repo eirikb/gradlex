@@ -7,7 +7,7 @@ if [[ -f "$USER_PWD/.gradle/bin/gradle" ]]; then
   exit
 fi
 
-for gg in gg*
+for gg in gg_ubuntu-latest_x86 gg*
 do
   echo "Running $gg..."
   chmod +x "$gg"
