@@ -19,7 +19,7 @@ int __cdecl main() {
     }
 
     printf("File downloaded, checking hash...\n");
-    char newHash[128];
+    char newHash[256];
     hashForFile("gradlex2", newHash);
     printf("Hash: %s\n", newHash);
     if (strcmp(hash, newHash) != 0) {
