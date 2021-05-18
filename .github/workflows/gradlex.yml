@@ -477,6 +477,7 @@ jobs:
           name: gradlex
 
       - name: Run!
+        shell: bash
         run: |
           sh gradlex -- --version
           file .gradle/bin/gradle
