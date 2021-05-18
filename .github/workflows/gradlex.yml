@@ -81,7 +81,7 @@ jobs:
         id: cache
         with:
           path: gradle
-          key: bgacache7
+          key: bgacache8
 
       - name: Download gradle
         if: steps.cache.outputs.cache-hit != 'true'
@@ -127,7 +127,7 @@ jobs:
         id: cache
         with:
           path: gradle
-          key: bgocache12-${{ matrix.os }}
+          key: bgocache13-${{ matrix.os }}
 
       - uses: actions/checkout@v2.1.0
         if: steps.cache.outputs.cache-hit != 'true'
@@ -268,7 +268,7 @@ jobs:
         id: cache
         with:
           path: hash
-          key: cscache7_${{ matrix.target }}
+          key: cscache8_${{ matrix.target }}
 
       - uses: actions/checkout@v2.1.0
         if: steps.cache.outputs.cache-hit != 'true'
