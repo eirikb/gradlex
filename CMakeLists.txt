@@ -1,3 +1,7 @@
+cmake_minimum_required(VERSION 3.9.4)
+
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+
 project(gg C)
 
 set(CMAKE_C_STANDARD 99)
